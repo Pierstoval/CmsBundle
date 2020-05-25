@@ -49,8 +49,8 @@ require_once __DIR__.'/Fixtures/App/AppKernel.php';
 
     $application = new Application($kernel);
     $application->setAutoExit(false);
-    $application->run(new ArrayInput(['command' => 'doctrine:database:create']));
-    $application->run(new ArrayInput(['command' => 'doctrine:schema:create']));
+    $application->run(new ArrayInput(['command' => 'doctrine:database:create']), new NullOutput());
+    $application->run(new ArrayInput(['command' => 'doctrine:schema:create']), new NullOutput());
 
     $kernel->shutdown();
 })();

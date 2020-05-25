@@ -11,6 +11,9 @@
 
 namespace Orbitale\Bundle\CmsBundle\EventListener;
 
+use Orbitale\Bundle\CmsBundle\Controller\CategoryController;
+use Orbitale\Bundle\CmsBundle\Controller\PageController;
+use Orbitale\Bundle\CmsBundle\Controller\PostsController;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -82,20 +85,44 @@ class LayoutsListener implements EventSubscriberInterface
             $layouts = $this->layouts;
             do {
                 $finalLayout = array_shift($layouts);
+                if (!$finalLayout) {
+                    continue;
+                }
                 if ($finalLayout['host'] || $finalLayout['pattern']) {
                     $finalLayout = null;
                 }
             } while (null === $finalLayout && count($layouts));
         }
 
-        if (null === $finalLayout || !$this->twig->getLoader()->exists($finalLayout['resource'])) {
-            $source = new Source('', $finalLayout['resource']);
+        if (null === $finalLayout) {
+            // Means that there is no fall-back to "default layout".
 
-            throw new LoaderError(sprintf(
-                'Unable to find template %s for layout %s. The "layout" parameter must be a valid twig view to be used as a layout.',
-                $finalLayout['resource'], $finalLayout['name']
-            ), 0, $source);
+            $controller = $request->attributes->get('_controller');
+
+            if (
+                !is_a($controller, PageController::class, true)
+                && !is_a($controller, CategoryController::class, true)
+                && !is_a($controller, PostsController::class, true)
+            ) {
+                // Don't do anything if there's no layout and the controller isn't supposed to use it.
+                // If the user still wants to use a layout "outside" the built-in controllers,
+                // they will have to add a layout config for it anyway.
+                return;
+            }
+
+            throw new \RuntimeException(sprintf(
+                'Unable to find layout for url "%s://%s%s". Did you forget to add a layout configuration for this path?',
+                $request->getScheme(), $host, $path
+            ));
         }
+
+        if (!$this->twig->getLoader()->exists($finalLayout['resource'])) {
+            throw new \RuntimeException(sprintf(
+                'Unable to find template %s for layout %s. The "layout" parameter must be a valid twig view to be used as a layout.',
+                $finalLayout['resource'] ?? '', $finalLayout['name'] ?? ''
+            ));
+        }
+
 
         $event->getRequest()->attributes->set('_orbitale_cms_layout', $finalLayout);
     }

@@ -12,8 +12,14 @@
 namespace Orbitale\Bundle\CmsBundle\Tests\EventListener;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Orbitale\Bundle\CmsBundle\Controller\CategoryController;
+use Orbitale\Bundle\CmsBundle\Controller\PageController;
+use Orbitale\Bundle\CmsBundle\Controller\PostsController;
+use Orbitale\Bundle\CmsBundle\EventListener\LayoutsListener;
 use Orbitale\Bundle\CmsBundle\Tests\AbstractTestCase;
 use Orbitale\Bundle\CmsBundle\Tests\Fixtures\TestBundle\Entity\Page;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Twig\Environment;
 use Twig\Error\LoaderError;
 
@@ -44,9 +50,62 @@ class LayoutsListenerTest extends AbstractTestCase
 
     public function testLayoutWrong(): void
     {
-        $this->expectException(LoaderError::class);
-        $this->expectExceptionMessage('Unable to find template this_layout_does_not_exist.html.twig for layout front. The "layout" parameter must be a valid twig view to be used as a layout in "this_layout_does_not_exist.html.twig".');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Unable to find template this_layout_does_not_exist.html.twig for layout front. The "layout" parameter must be a valid twig view to be used as a layout.');
         static::createClient(['environment' => 'layout_wrong'])->request('GET', '/page/');
+    }
+
+    public function testNoLayoutsDoesNotSetRequestAttribute()
+    {
+        $kernel = static::bootKernel();
+        $request = Request::create('/');
+        $listener = new LayoutsListener([], $this->getTwig());
+        $listener->setRequestLayout(new RequestEvent($kernel, $request, $kernel::MASTER_REQUEST));
+        static::assertFalse($request->attributes->has('_orbitale_cms_layout'));
+    }
+
+    public function testNoMatchingLayoutDoesNotSetRequestAttribute()
+    {
+        $kernel = static::bootKernel();
+
+        $listener = new LayoutsListener([
+            [
+                'pattern' => '/noop',
+                'host' => '',
+                'resource' => '.',
+            ],
+        ], $this->getTwig());
+        $request = Request::create('/');
+        $listener->setRequestLayout(new RequestEvent($kernel, $request, $kernel::MASTER_REQUEST));
+
+        static::assertFalse($request->attributes->has('_orbitale_cms_layout'));
+    }
+
+    /** @dataProvider provideBundleControllerClasses */
+    public function testNoMatchingLayoutWithBundleControllerThrowsException(string $controller)
+    {
+        $kernel = static::bootKernel();
+
+        $listener = new LayoutsListener([
+            [
+                'pattern' => '/noop',
+                'host' => '',
+                'resource' => '.',
+            ],
+        ], $this->getTwig());
+        $request = Request::create('/no-way');
+        $request->attributes->set('_controller', $controller);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Unable to find layout for url "http://localhost/no-way". Did you forget to add a layout configuration for this path?');
+        $listener->setRequestLayout(new RequestEvent($kernel, $request, $kernel::MASTER_REQUEST));
+    }
+
+    public function provideBundleControllerClasses(): \Generator
+    {
+        yield [PageController::class];
+        yield [CategoryController::class];
+        yield [PostsController::class];
     }
 
     /**
@@ -70,5 +129,10 @@ class LayoutsListenerTest extends AbstractTestCase
         $em->flush();
 
         return $client;
+    }
+
+    private function getTwig(): Environment
+    {
+        return $this->createMock(Environment::class);
     }
 }
